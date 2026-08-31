@@ -1,0 +1,117 @@
+{
+  "_comment": [
+    "Fonte de verdade do formulario 'Request hardware and eSIM' do SSM.",
+    "Editar aqui, nunca so na tela. O form-sync.mjs --verify compara o que",
+    "esta salvo no Jira contra este arquivo e falha se divergir.",
+    "",
+    "jiraField null = pergunta existe so no formulario (toggle de UI).",
+    "jiraField preenchido = TEM que estar ligado, senao o backend nao le o valor."
+  ],
+
+  "target": {
+    "site": "https://stellartelecommunications.atlassian.net",
+    "projectKey": "SSM",
+    "requestTypeId": 396,
+    "requestTypeName": "Request hardware and eSIM",
+    "formId": "83f310f0-7073-4418-873d-2de7da845ecc",
+    "formName": "Request hardware and eSIM"
+  },
+
+  "toggles": [
+    {
+      "key": "needs_globble",
+      "label": "Do you need GLOBBLE devices?",
+      "type": "radio",
+      "options": ["Yes", "No"],
+      "jiraField": null,
+      "required": true
+    },
+    {
+      "key": "needs_connectivity",
+      "label": "Do you need connectivity (SIM, eSIM or chip)?",
+      "type": "radio",
+      "options": ["Yes", "No"],
+      "jiraField": null,
+      "required": true
+    },
+    {
+      "key": "needs_accessories",
+      "label": "Do you need accessories?",
+      "type": "radio",
+      "options": ["Yes", "No"],
+      "jiraField": null,
+      "required": true
+    }
+  ],
+
+  "sections": [
+    {
+      "key": "globble",
+      "title": "GLOBBLE devices",
+      "description": "Fill only the models you need. Leave the rest blank.",
+      "showWhen": { "toggle": "needs_globble", "equals": "Yes" },
+      "questions": [
+        { "label": "GLOBBLE 4G Black", "type": "number", "jiraField": "customfield_10890", "wholeNumbersOnly": true, "min": 1, "required": false },
+        { "label": "GLOBBLE 4G Regolith", "type": "number", "jiraField": "customfield_10923", "wholeNumbersOnly": true, "min": 1, "required": false },
+        { "label": "GLOBBLE 5G Black", "type": "number", "jiraField": "customfield_10924", "wholeNumbersOnly": true, "min": 1, "required": false },
+        { "label": "GLOBBLE 5G Regolith", "type": "number", "jiraField": "customfield_10925", "wholeNumbersOnly": true, "min": 1, "required": false },
+        { "label": "GLOBBLE Regolith WiFi Only", "type": "number", "jiraField": "customfield_10926", "wholeNumbersOnly": true, "min": 1, "required": false }
+      ]
+    },
+    {
+      "key": "connectivity",
+      "title": "Connectivity",
+      "description": "Fill only what you need.",
+      "showWhen": { "toggle": "needs_connectivity", "equals": "Yes" },
+      "questions": [
+        { "label": "SIM Card", "type": "number", "jiraField": "customfield_10927", "wholeNumbersOnly": true, "min": 1, "required": false },
+        { "label": "A1 eSIM", "type": "number", "jiraField": "customfield_10928", "wholeNumbersOnly": true, "min": 1, "required": false },
+        { "label": "A1 Chip", "type": "number", "jiraField": "customfield_10929", "wholeNumbersOnly": true, "min": 1, "required": false }
+      ]
+    },
+    {
+      "key": "accessories",
+      "title": "Accessories",
+      "showWhen": { "toggle": "needs_accessories", "equals": "Yes" },
+      "questions": [
+        { "label": "Teltonika 5G Antennas", "type": "number", "jiraField": "customfield_10930", "wholeNumbersOnly": true, "min": 1, "required": false }
+      ]
+    },
+    {
+      "key": "delivery",
+      "title": "Delivery address",
+      "description": "Used to generate the UPS label. An incomplete address blocks the shipment.",
+      "showWhen": null,
+      "questions": [
+        { "label": "Recipient name", "type": "shortText", "jiraField": "customfield_10931", "required": true },
+        { "label": "Address line 1", "type": "shortText", "jiraField": "customfield_10932", "required": true },
+        { "label": "Address line 2", "type": "shortText", "jiraField": "customfield_10933", "required": false },
+        { "label": "City", "type": "shortText", "jiraField": "customfield_10934", "required": true },
+        { "label": "Postal code", "type": "shortText", "jiraField": "customfield_10936", "required": true },
+        { "label": "State or region", "type": "shortText", "jiraField": "customfield_10935", "required": false, "description": "Required for US, CA and IE only." },
+        { "label": "Country", "type": "dropdown", "jiraField": "customfield_10938", "required": true },
+        { "label": "Phone", "type": "shortText", "jiraField": "customfield_10937", "required": true, "description": "Required by UPS for international shipments." }
+      ]
+    }
+  ],
+
+  "mustBeLinked": [
+    "customfield_10890",
+    "customfield_10923",
+    "customfield_10924",
+    "customfield_10925",
+    "customfield_10926",
+    "customfield_10927",
+    "customfield_10928",
+    "customfield_10929",
+    "customfield_10930",
+    "customfield_10931",
+    "customfield_10932",
+    "customfield_10933",
+    "customfield_10934",
+    "customfield_10935",
+    "customfield_10936",
+    "customfield_10937",
+    "customfield_10938"
+  ]
+}
