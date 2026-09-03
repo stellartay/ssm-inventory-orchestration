@@ -1,11 +1,10 @@
 # SSM Inventory Orchestration — Contexto e Especificação
 
-Versão 5. Substitui v1 a v4.
+Versão 6. Substitui v1 a v5.
 Fonte de verdade das decisões. Não reabrir decisão travada sem confirmação
 explícita do dono do projeto.
 
 Construído e validado entre 2026-08-25 e 2026-08-31.
-A v5 incorpora os achados do teste manual de ponta a ponta no Zoho e na UPS.
 
 ---
 
@@ -20,7 +19,7 @@ no inventário quando o último ticket da cadeia fecha, gerando etiqueta UPS.
 
 ## 2. Roteamento
 
-Regras avaliadas **nesta ordem**, sobre o conjunto de `routing_class` do pedido.
+Regras avaliadas **nesta ordem**. A primeira que casar vence.
 
 | # | Condição | Cadeia de tickets |
 |---|---|---|
@@ -36,12 +35,14 @@ Regras avaliadas **nesta ordem**, sobre o conjunto de `routing_class` do pedido.
 - **Quantidades duplicadas somam.**
 - **Tudo ou nada:** se qualquer linha faltar, nada é reservado e o comentário
   lista **todas** as faltas de uma vez.
+- **A1 Allocation não embala.** Sem Pak, sem Package, sem etiqueta. eSIM é
+  alocado no portal da A1 e a baixa é um Shipment sem transportadora.
 
 ---
 
 ## 3. `item_map`
 
-| `zoho_item_id` | `display_name` | `routing_class` | `jira_qty_field` | peso kg |
+| `zoho_item_id` | `display_name` | `routing_class` | `jira_qty_field` | kg/un |
 |---|---|---|---|---|
 | `1262780000000063138` | GLOBBLE 4G Black | globble | `customfield_10890` | 1,68 |
 | `1262780000000063156` | GLOBBLE 4G Regolith | globble | `customfield_10923` | 1,68 |
@@ -53,7 +54,7 @@ Regras avaliadas **nesta ordem**, sobre o conjunto de `routing_class` do pedido.
 | `1262780000000069142` | A1 Chip | physical | `customfield_10929` | 0,01 |
 | `1262780000000069074` | Teltonika 5G Antennas | physical | `customfield_10930` | 1,30 |
 
-Estoque em 31/08: SIM Card 1938, A1 eSIM 260, GLOBBLE 4G Black 130,
+Estoque 31/08: SIM Card 1938, A1 eSIM 260, GLOBBLE 4G Black 130,
 GLOBBLE 5G Regolith 98, GLOBBLE 4G Regolith 13, GLOBBLE 5G Black 3,
 Teltonika 2, **A1 Chip 0**, **GLOBBLE Regolith WiFi Only 0**.
 
@@ -61,36 +62,33 @@ Nenhum item tem SKU. **Mapear por `item_id`.**
 
 ---
 
-## 4. Estoque: três coisas que só o teste revelou
+## 4. Estoque: quatro achados do teste manual
 
-### 4.1 O estoque vem como float
-`260.0`, `1938.0`. Arredondar antes de comparar. Não usar igualdade exata.
+### 4.1 Vem como float
+`260.0`, `1938.0`. Arredondar antes de comparar.
 
 ### 4.2 `actual_available_stock` NÃO desconta o committed
-Testado: com 1 unidade committed, `actual_available_stock` continuou 1938 e
-`actual_committed_stock` foi para 1. **O campo ignora a reserva.**
+Testado: 1 unidade committed, `actual_available_stock` continuou 1938 e
+`actual_committed_stock` foi para 1.
 
 ```
 disponível = actual_available_stock − actual_committed_stock − pendentes locais
 ```
 
-Se o backend confiar apenas em `actual_available_stock`, ele nunca vê reservas
-existentes e aprova pedidos além do estoque. Isso também protege contra reservas
-criadas manualmente na tela do Zoho, fora da automação.
+Se o backend confiar só em `actual_available_stock`, aprova além do estoque.
+Subtrair explicitamente também protege contra reservas feitas na tela do Zoho.
 
-### 4.3 Confirmar SO não move estoque físico, deletar SO libera o committed
-Testado nos dois sentidos. É o comportamento que o `/api/cancel` depende.
-Em produção usar **Void** e não Delete: mantém rastro auditável e libera igual.
+### 4.3 Confirmar SO não move físico. Remover SO libera o committed
+Testado nos dois sentidos. Em produção usar **Void**, não Delete: mantém
+rastro auditável e libera igual.
 
-### 4.4 Os itens precisam de `can_be_sold = true`
-Descoberto no teste: os 9 itens estavam com `can_be_sold` e `can_be_purchased`
-em `false`. Item não vendável **não aparece em Sales Order e a API rejeita**.
-Já corrigido manualmente nos 9, com `rate` 0. Se um item novo entrar no catálogo,
-habilitar Sales Information ou o `/api/reserve` falha para ele.
+### 4.4 Itens precisam de `can_be_sold = true`
+Os 9 estavam `false`. Item não vendável **não aparece em Sales Order e a API
+rejeita**. Corrigido, com `rate` 0. Item novo no catálogo precisa disso ou o
+`/api/reserve` falha para ele.
 
-Consequência aceita: os Sales Orders saem com total €0,00 e aparecem nos
-relatórios de vendas como documentos de valor nulo. O Zoho pede confirmação de
-"zero amount" na tela, mas **a API aceita direto**.
+Consequência aceita: SOs com total €0,00 aparecem nos relatórios de vendas.
+A tela pede confirmação de "zero amount", mas **a API aceita direto**.
 
 ---
 
@@ -103,11 +101,11 @@ relatórios de vendas como documentos de valor nulo. O Zoho pede confirmação d
 | OAuth | `https://accounts.zoho.eu/oauth/v2/token` |
 | `organization_id` | `20117600647` |
 | Contato interno | `Internal IT Requests` · `1262780000000074002` |
-| Location | Siège social, única. Preenchida automaticamente pelo Zoho |
-| Endereço de origem | 1 Bis Chemin Bacchus, Bruges, Nouvelle-Aquitaine 33520, France |
+| Location | Siège social, única, preenchida automaticamente |
+| Origem | 1 Bis Chemin Bacchus, Bruges, Nouvelle-Aquitaine 33520, France |
 | Telefone origem | 33-681312199 |
 
-Scopes (mínimos, confirmados):
+Scopes mínimos, confirmados:
 ```
 ZohoInventory.items.READ
 ZohoInventory.salesorders.CREATE
@@ -116,23 +114,16 @@ ZohoInventory.packages.CREATE
 ZohoInventory.shipmentorders.CREATE
 ```
 
-`/locations` e `/settings/*` retornam `code: 57`, esperado. `items.UPDATE` não
-está concedido de propósito: o backend nunca escreve em itens.
+`/locations` e `/settings/*` dão `code: 57`, esperado. `items.UPDATE` não
+concedido de propósito.
 
 ### Numeração manual
-A org usa numeração **manual** para Package e Shipment Order. O backend gera:
-```
-PKG-{parentKey}-{n}
-SHP-{parentKey}-{n}
-```
-Rastreável até o ticket, ao contrário de um contador sequencial.
+A org usa numeração manual de Package e Shipment. O backend gera
+`PKG-{parentKey}-{n}` e `SHP-{parentKey}-{n}`, rastreável até o ticket.
 
 ### Endereço de destino é obrigatório
-O contato interno **não tem** billing nem shipping address. Sem
-`shipping_address` no payload do Sales Order, o shipment não pode ser criado:
-a tela mostra "Address cannot be empty". O `/api/reserve` **tem** que enviar.
-
-Mapeamento confirmado um para um com o diálogo do Zoho:
+O contato interno não tem billing nem shipping address. Sem `shipping_address`
+no SO o shipment não pode ser criado ("Address cannot be empty").
 
 | Campo Jira | Zoho | UPS |
 |---|---|---|
@@ -147,160 +138,182 @@ Mapeamento confirmado um para um com o diálogo do Zoho:
 
 > **O Zoho espera o nome do país, não o ISO.** O dropdown oferece "France".
 > O campo Jira guarda `"FR - France"`. Enviar a parte **depois** do separador.
-> (A v4 dizia o contrário e estava errado.)
 
 ---
 
-## 6. UPS: validado, com requisitos que não estavam previstos
+## 6. UPS: validado
 
-A integração nativa do Zoho funciona com a conta francesa. Testado: cotação real
-de Bruges para Bruges retornou UPS Express €14,10, UPS Standard €7,07,
-UPS Saver €10,97. **Não integrar a API da UPS.**
+Integração nativa do Zoho funcionando com a conta francesa. Cotação real de
+Bruges para Bruges: Express €14,10, Standard €7,07, Saver €10,97.
+**Não integrar a API da UPS.**
 
 Fluxo: Validate Address → Create Shipment → Generate Label.
+Billing Method default `Bill Shipper`: frete na conta da Stellar.
 
-### 6.1 Peso e Parcel Type são obrigatórios
-Sem os dois a UPS não gera etiqueta.
+### 6.1 Peso e Parcel Type obrigatórios
 
 ### 6.2 kg e cm têm que ser consistentes
-A UPS rejeitou com: *"A shipment cannot have a KGS/IN or LBS/CM or OZS/CM as its
-unit of measurements"*. O Zoho traz peso em **`lb`** por default e dimensão em
-`cm`, combinação inválida. **O backend deve forçar `kg` e `cm` explicitamente.**
+A UPS rejeitou: *"A shipment cannot have a KGS/IN or LBS/CM or OZS/CM as its
+unit of measurements"*. O Zoho traz peso em **`lb`** por default.
+**O backend deve forçar `kg` e `cm`.**
 
 ### 6.3 Parcel Type: só valores da UPS
-As opções são `UPS Letter`, `Package`, `Tube`, `Pak`, `UPS Express Box`,
+Opções: `UPS Letter`, `Package`, `Tube`, `Pak`, `UPS Express Box`,
 `UPS 10 KG Box®`, `Pallet`, `Specify custom dimensions`.
-"Big box", "Medium box" e "envelope de bolha" **não existem**.
-
-Regra decidida:
 
 | Conteúdo | Parcel Type |
 |---|---|
 | Até 100 un. de SIM Card ou A1 Chip, sem outros itens | `Pak` |
-| Todo o resto | `Specify custom dimensions` |
+| Todo o resto | `Package` |
 
-`Specify custom dimensions` exige Length, Width, Height obrigatórios, em cm.
+**Dimensões não são declaradas.** A logística confirmou que no formulário da
+UPS eles informam apenas peso e quantidade. `Specify custom dimensions` foi
+descartado.
 
-### 6.4 Serviço de frete precisa ser escolhido
-O backend não pode omitir. Decidido: **o cliente interno escolhe no formulário
-inicial** (campo novo, dropdown Express / Standard / Saver).
+### 6.4 Serviço de frete
+Escolhido pelo cliente interno no formulário (`customfield_10971`), com
+Standard, Saver e Express.
 
-**Exceção: destino fora da Europa usa sempre Expedite**, sobrepondo a escolha do
-requisitante. Da lista atual de países, só os EUA se qualificam. O formulário
-deve avisar que a escolha pode ser sobreposta.
+**Destino fora da Europa usa sempre Expedite**, sobrepondo a escolha. Da lista
+atual de países, só os EUA se qualificam.
 
-> Pendente de validação: "Expedite" **não apareceu** na cotação doméstica. O
-> UPS Worldwide Expedited provavelmente só aparece com destino internacional.
-> Confirmar cotando um destino fora da UE antes de codificar essa regra.
+> Pendente: "Expedite" **não apareceu** na cotação doméstica. Confirmar cotando
+> destino fora da UE antes de codificar essa regra.
 
 ### 6.5 N packages em um único shipment
-A tela tem "1. ASSOCIATED PACKAGES" com "Add Package". Um shipment aceita vários
-pacotes, então **um envio e um tracking number** mesmo com múltiplas caixas.
+Um shipment aceita vários pacotes: **um envio, um tracking number**.
 
-### 6.6 Billing Method
-Default `Bill Shipper`: o frete é cobrado da conta da Stellar.
-
-### 6.7 Outras opções relevantes
-`Residential Delivery` provavelmente necessário para colaborador em casa, e
-muda o preço. `Direct Delivery Only` e `Saturday Delivery` disponíveis.
-Nenhuma dessas está decidida.
+### 6.6 Não decidido
+`Residential Delivery` (provavelmente necessário para colaborador em casa, e
+muda o preço), `Direct Delivery Only`, `Saturday Delivery`.
 
 ---
 
 ## 7. Regras de embalagem
 
-**Peso do pacote** = Σ (`qty` × peso unitário), da tabela em §3.
-Cobre automaticamente todas as combinações, incluindo pedidos mistos.
+**Peso total** = Σ (`qty` × kg/un), da tabela em §3. Cobre pedidos mistos.
 
-**Número de caixas:**
-```
-caixas = ceil(qty / unidades_por_caixa)
-peso da caixa = unidades na caixa × peso unitário
-```
+**Número de pacotes** vem da logística, campo `Number of packages`
+(`customfield_10975`), preenchido por quem embala antes de fechar o ticket.
 
-O `unidades_por_caixa` é **informado pela logística no ticket de Pick**, não
-fixado em regra. Motivo: as dimensões da caixa e o que cabe nela são
-conhecimento de quem embala, e um número fixo envelheceria.
+**Peso por pacote** = peso total ÷ número de pacotes, divisão igual.
+Aproximação aceita: a UPS cobra o envio como uma linha na fatura, então a
+distribuição por caixa é declaratória, não financeira.
 
-**SIM Card e A1 Chip:** até 100 un. em `Pak`, 1 pacote. De 101 a 2000, custom
-dimensions, 1 pacote. Acima de 2000, 1 pacote a cada 2000. A 10g, 2000 unidades
-dão 20 kg por caixa.
+> Ressalva: se uma caixa passar do limite de peso da UPS, entra Additional
+> Handling e a fatura muda. O limite do contrato de vocês é desconhecido. O
+> backend deveria avisar no comentário do ticket acima de um limite
+> configurável, começando desabilitado.
 
-**Campos novos no ticket de Pick & Pack e Pick & Provisioning:**
-Length, Width, Height (cm) e Unidades por caixa. **Obrigatórios na transição
-para Done**, via validador de workflow, senão o `/api/fulfill` falha por falta
-de dado.
+**Quem informa o quê:**
+
+| Work type | Id | Informa pacotes |
+|---|---|---|
+| Logistics Pack | `10376` | sim |
+| Pick & Pack | `10377` | sim |
+| Pick & Provisioning | `10375` | não, ainda não embalou |
+| A1 Allocation | `10378` | não, não tem caixa |
 
 ---
 
 ## 8. Jira
 
-Site: `https://stellartelecommunications.atlassian.net`
-Projeto: **SSM**, JSM, **company-managed** · `cloudId` `8cb90050-eca2-4420-b374-653bcc86c1d5`
+Site `https://stellartelecommunications.atlassian.net`
+Projeto **SSM**, JSM, company-managed · `cloudId` `8cb90050-eca2-4420-b374-653bcc86c1d5`
 
-### Work types (subtask, level -1)
+### Workflows, dois
 
-| Nome | Id |
-|---|---|
-| Pick & Provisioning | `10375` |
-| Logistics Pack | `10376` |
-| Pick & Pack | `10377` |
-| A1 Allocation | `10378` |
+| Workflow | Id | Work types | Validador |
+|---|---|---|---|
+| `SSM: Logistics Fulfilment` | `b1d13f71-ac61-4170-b59e-e2b8f42e3756` | `10376`, `10377` | Number of packages obrigatório no Finish |
+| `SSM: Logistics Fulfilment No Packing` | `a7531ca9-4ff3-454b-8f9f-a39955483681` | `10375`, `10378` | nenhum |
 
-### Workflow
+Grafo idêntico nos dois: `Open → (Start work) → In Progress → (Finish) → Done`,
+sem saída de Done.
 
-`SSM: Logistics Fulfilment` · `b1d13f71-ac61-4170-b59e-e2b8f42e3756`
-`Open → (Start work) → In Progress → (Finish) → Done`, sem saída de Done.
+**Status id do Done: `10004`**, o mesmo nos dois workflows porque reusam os
+status globais. Usar o ID nos triggers, nunca o nome: o site tem Done, Closed,
+Completed e Cancelled convivendo, e dois status chamados "Work in progress".
 
-**Status id do Done: `10004`.** Usar o ID, nunca o nome: o site tem Done,
-Closed, Completed e Cancelled convivendo, e dois status chamados
-"Work in progress".
+> ### O toggle de customer transitions desativa as rules
+> O Jira avisa: *"Rules won't work when customer transitions are enabled."*
+> Está desligado hoje. Se alguém ligar "Customers can make this transition" no
+> Finish, o validador para de funcionar **em silêncio**.
 
-Workflow scheme `10164`, field config scheme `2`, ambos dedicados ao SSM.
+Workflow scheme `10164`, field config scheme `2`, issue type scheme dedicado,
+issue type screen scheme `10162`.
 
 ### Request type
 
-`Request hardware and eSIM` · id **`396`** · portal group **Logistics**
+`Request hardware and eSIM` · **`396`** · portal group **Logistics**
 Portal: `https://service.desk.stellar.tc/servicedesk/customer/portal/5/create/396`
+Atendido por Bhumika Umesh (a regra `JIP-140` cobre só o `Logistics Request`
+antigo; incluir o novo na condição dela ou criar regra equivalente).
 
-### Campos custom existentes
+### Campos custom
 
-`customfield_10890` e `10923` a `10938`. Ver mapeamento em §3 e §5.
+| Campo | Id |
+|---|---|
+| Qty GLOBBLE 4G Black | `customfield_10890` |
+| Qty GLOBBLE 4G Regolith | `customfield_10923` |
+| Qty GLOBBLE 5G Black | `customfield_10924` |
+| Qty GLOBBLE 5G Regolith | `customfield_10925` |
+| Qty GLOBBLE Regolith WiFi Only | `customfield_10926` |
+| Qty SIM Card | `customfield_10927` |
+| Qty A1 eSIM | `customfield_10928` |
+| Qty A1 Chip | `customfield_10929` |
+| Qty Teltonika 5G Antennas | `customfield_10930` |
+| Recipient name | `customfield_10931` |
+| Address line 1 | `customfield_10932` |
+| Address line 2 | `customfield_10933` |
+| City | `customfield_10934` |
+| State or region | `customfield_10935` |
+| Postal code | `customfield_10936` |
+| Phone | `customfield_10937` |
+| Country | `customfield_10938` |
+| **Shipping service** | `customfield_10971` |
+| **Number of packages** | `customfield_10975` |
 
-### Campos custom a criar
+Não usados, mantidos apenas para não sujar "Deleted fields":
+`UNUSED Box length cm` `10972`, `UNUSED Box width cm` `10973`,
+`UNUSED Box height cm` `10974`. Fora de qualquer scheme.
 
-| Campo | Onde | Obrigatório |
-|---|---|---|
-| Shipping service | formulário inicial | sim |
-| Length (cm) | ticket de Pick | na transição para Done |
-| Width (cm) | ticket de Pick | idem |
-| Height (cm) | ticket de Pick | idem |
-| Units per box | ticket de Pick | idem |
+> ### Campo no field config scheme não basta
+> Associar ao field configuration scheme torna o campo **existente**, mas não
+> **visível**. Ele precisa estar numa **tela**. O `Number of packages` só
+> apareceu no createmeta depois de ser adicionado ao screen `10361`, tab
+> `10365`, que é o default do issue type screen scheme `10162`.
+>
+> Verificar sempre com:
+> ```
+> GET /rest/api/3/issue/createmeta/SSM/issuetypes/{typeId}
+> ```
+> Se o campo não estiver ali, ninguém consegue preencher, e um validador que o
+> exige trava a pessoa sem saída.
 
 ---
 
 ## 9. Formulário
 
-Id `83f310f0-7073-4418-873d-2de7da845ecc`. 20 perguntas, 4 seções, 3 condições,
-17 ligações. Definido em `apply-form.mjs`.
+Id `83f310f0-7073-4418-873d-2de7da845ecc`.
+**21 perguntas, 4 seções, 3 condições, 18 ligações.** Definido em `apply-form.mjs`.
 
 ```bash
 node apply-form.mjs            # dry run + sanity check
 node apply-form.mjs --apply    # PUT do design
 # reanexar na tela            <-- OBRIGATORIO
-node form-sync.mjs --inspect   # confere as 17 ligacoes
+node form-sync.mjs --inspect   # confere as 18 ligacoes
 ```
 
 > ### O PUT do design derruba o anexo ao request type
-> Não documentado. Depois de **todo** `--apply`, reanexar em Space settings →
-> Request types → Request hardware and eSIM → Forms → Attach form → Select
-> existing → Add → Save changes.
+> Depois de **todo** `--apply`, reanexar em Space settings → Request types →
+> Request hardware and eSIM → Forms → Attach form → Select existing → Add →
+> Save changes.
 >
 > Se esquecido, o portal mostra só o Summary, o pedido chega vazio e o backend
 > recebe zero linhas **sem nenhum erro**.
 >
-> `portalRequestTypeIds` da API **não** reflete o anexo (fica `[]`). Verificar
-> na tela.
+> `portalRequestTypeIds` da API **não** reflete o anexo (fica `[]`).
 
 ### Schema do design (extraído do tenant, ausente da doc pública)
 
@@ -309,7 +322,6 @@ node form-sync.mjs --inspect   # confere as 17 ligacoes
 `jiraField` a ligação, **default é não ligar**
 `layout[0]` fora de seção · `layout[i]` seção `i`
 
-Condição:
 ```json
 {"21":{"i":{"co":{"cIds":{"1":["1"]}},"operator":"OR","groups":[{"operator":"AND",
 "checks":[{"fieldId":"1","type":"SOME_OF","constraint":["1"]}]}]},
@@ -320,7 +332,35 @@ Só perguntas **fora de seção** podem ser gatilho de condição.
 
 ---
 
-## 10. Infra
+## 10. Automation
+
+Existe um molde salvo e **desabilitado**:
+`SSM: Zoho reserve on hardware request - TEMPLATE DO NOT ENABLE`
+id `01a06657-4f37-76bc-8c6f-8afe5c1bd0c6`
+
+Configuração dele, que serve de padrão para as outras três:
+- Trigger **Work item created**
+- Condição **JQL**: `project = SSM AND "Request Type" = "Request hardware and eSIM"`
+- Ação **Send web request**, POST para `/api/reserve`
+
+**A URL não é validada na criação**, então as regras podem existir antes do
+backend. `Validate your web request configuration` é opcional.
+
+**Falta em todas:** body JSON com smart values, header HMAC, e o
+"Delay execution of subsequent flow actions" onde a resposta for lida.
+
+> As três regras restantes devem ser criadas **depois** do backend, porque o
+> body depende do contrato exato dos endpoints. Se o payload divergir, o
+> webhook devolve 400 e o Jira não avisa ninguém.
+
+Automation deste site fica em `/jira/settings/automation`. O caminho por
+projeto responde "Legacy Automation is not available for this site".
+
+Convenção de nome existente no projeto: `SSM: descrição (JIP-XXX)`.
+
+---
+
+## 11. Infra
 
 | | |
 |---|---|
@@ -331,7 +371,7 @@ Só perguntas **fora de seção** podem ser gatilho de condição.
 Function Region deve ser EU. Deployment Protection **desligada** em produção,
 senão o Jira Automation recebe tela de login. Hobby limita Cron a 1x/dia.
 
-### Env vars, todas configuradas
+### Env vars, 13 no Vercel
 
 ```
 ZOHO_CLIENT_ID                (sensitive)
@@ -349,14 +389,17 @@ SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY     (sensitive)
 ```
 
-Refresh do token do Zoho testado e funcionando. Cachear em `zoho_token` e reusar
-até expirar, com lock para não disparar refresh concorrente.
+Refresh do token do Zoho testado. Cachear em `zoho_token` e reusar até expirar,
+com lock para não disparar refresh concorrente.
 
-`JIRA_API_TOKEN` é **token pessoal**, não conta de serviço. Ver §12.
+`JIRA_API_TOKEN` é **token pessoal**, não conta de serviço. Ver §14.
+
+O `.env.local` local precisa das mesmas variáveis para o Claude Code rodar os
+scripts. `.env` e `.env.local` estão no `.gitignore`.
 
 ---
 
-## 11. Schema Supabase
+## 12. Schema Supabase
 
 ```sql
 create table item_map (
@@ -371,15 +414,15 @@ create table item_map (
 );
 
 create table requests (
-  id            uuid primary key default gen_random_uuid(),
-  parent_key    text not null unique,
-  zoho_so_id    text,
-  route         text check (route in ('globble','esim_plus_physical','esim_only','physical_only')),
-  shipping_service text,             -- Express | Standard | Saver | Expedite
-  status        text not null default 'pending'
-                check (status in ('pending','reserved','fulfilled','cancelled','failed')),
-  created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now()
+  id               uuid primary key default gen_random_uuid(),
+  parent_key       text not null unique,
+  zoho_so_id       text,
+  route            text check (route in ('globble','esim_plus_physical','esim_only','physical_only')),
+  shipping_service text,             -- Standard | Saver | Express | Expedite
+  status           text not null default 'pending'
+                   check (status in ('pending','reserved','fulfilled','cancelled','failed')),
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
 );
 
 create table request_lines (
@@ -391,14 +434,15 @@ create table request_lines (
 );
 
 create table tickets (
-  id            uuid primary key default gen_random_uuid(),
-  request_id    uuid not null references requests(id) on delete cascade,
-  issue_key     text not null unique,
-  kind          text not null
-                check (kind in ('pick_provisioning','logistics_pack','pick_pack','allocation')),
-  status        text not null default 'open'
-                check (status in ('open','closed')),
-  created_at    timestamptz not null default now()
+  id                 uuid primary key default gen_random_uuid(),
+  request_id         uuid not null references requests(id) on delete cascade,
+  issue_key          text not null unique,
+  kind               text not null
+                     check (kind in ('pick_provisioning','logistics_pack','pick_pack','allocation')),
+  status             text not null default 'open'
+                     check (status in ('open','closed')),
+  number_of_packages int,
+  created_at         timestamptz not null default now()
 );
 
 create table shipment_ledger (
@@ -421,7 +465,7 @@ create table zoho_token (
 
 ---
 
-## 12. Endpoints
+## 13. Endpoints
 
 Base `https://ssm-inventory-orchestration.vercel.app`. HMAC em header.
 
@@ -429,13 +473,15 @@ Base `https://ssm-inventory-orchestration.vercel.app`. HMAC em header.
 Trigger: pai criado no request type 396.
 
 1. Lê os 9 campos de quantidade, monta linhas com os não vazios
-2. Valida o endereço. Se incompleto, comenta e encerra **antes** de reservar
-3. Locks de todas as linhas, **ordenados por `zoho_item_id`**
-4. Para cada item: `actual_available_stock − actual_committed_stock − pendentes`
-5. Se qualquer linha faltar: comenta **todas** as faltas, encerra sem criar SO
-6. Cria SO com N linhas e `shipping_address` (país por nome), confirma com
+2. Lê o `Shipping service` (`10971`). Se o país estiver fora da Europa,
+   sobrepõe para Expedite
+3. Valida o endereço. Se incompleto, comenta e encerra **antes** de reservar
+4. Locks de todas as linhas, **ordenados por `zoho_item_id`**
+5. Disponível = `actual_available_stock − actual_committed_stock − pendentes`
+6. Se qualquer linha faltar: comenta **todas** as faltas, encerra sem criar SO
+7. Cria SO com N linhas e `shipping_address` (país por nome), confirma com
    `POST /salesorders/{id}/status/confirmed`
-7. Resolve a rota (§2) e cria os tickets iniciais
+8. Resolve a rota (§2) e cria os tickets iniciais
 
 ### `POST /api/advance`
 Trigger: `Pick & Provisioning` (`10375`) → status `10004`.
@@ -444,51 +490,53 @@ Cria o `Logistics Pack` (`10376`).
 ### `POST /api/fulfill`
 Trigger: ticket terminal (`10376`, `10377`, `10378`) → status `10004`.
 
-- Lê Length, Width, Height e Units per box do ticket
-- Calcula caixas e peso por caixa (§7)
-- Cria Package(s) com numeração `PKG-{parentKey}-{n}`
-- Cria Shipment Order **com UPS**, `kg` e `cm` forçados, parcel type por §6.3,
-  serviço por §6.4, N packages no mesmo shipment
+- Lê `Number of packages` (`10975`) do ticket
+- Peso total por §7, dividido igualmente entre os pacotes
+- Parcel Type por §6.3
+- Cria N Packages `PKG-{parentKey}-{n}`
+- Cria Shipment Order **com UPS**, `kg` e `cm` forçados, serviço por §6.4,
+  N packages no mesmo shipment
 - Captura tracking, grava no `shipment_ledger`, comenta no pai
 - `allocation`: Shipment **sem transportadora**, só linhas `esim`, sem etiqueta
 - Se todos os tickets estão `closed`, marca `fulfilled` e sinaliza no pai
 
 ### `POST /api/cancel`
 Trigger: pai → Cancelled.
-`POST /salesorders/{id}/status/void`. Void, não Delete: mantém auditoria e
-libera o committed igual (testado).
+`POST /salesorders/{id}/status/void`. Void, não Delete.
 
 ### `POST /api/availability-sync`
 Vercel Cron. Reescreve a **descrição do campo** de itens. Não alterar o label
-das opções: o label é o mesmo objeto nos tickets históricos.
+das opções: é o mesmo objeto nos tickets históricos.
 
 ---
 
-## 13. Concorrência
+## 14. Concorrência
 
 ```sql
 select pg_advisory_xact_lock(hashtext(p_zoho_item_id));
 ```
 
-Adquirir o lock de **todas** as linhas antes de checar qualquer uma,
-**ordenados por `zoho_item_id`** para evitar deadlock entre pedidos com os
-mesmos itens em ordem inversa.
+Lock de **todas** as linhas antes de checar qualquer uma, **ordenados por
+`zoho_item_id`** para evitar deadlock entre pedidos com os mesmos itens em
+ordem inversa.
 
 ---
 
-## 14. Riscos aceitos
+## 15. Riscos aceitos
 
-**Divergência contábil.** Shipment sem Invoice: o contábil não desce. Aceito.
-**Não** escrever job de reconciliação antes de testar como `inventoryadjustments`
+**Divergência contábil.** Shipment sem Invoice: o contábil não desce. **Não**
+escrever job de reconciliação antes de testar como `inventoryadjustments`
 interage com o split contábil/físico.
 
-**Token pessoal do Jira.** Toda ação da automação aparece como do dono da conta,
-e os endpoints param de escrever se o token for revogado. Aceito para validar o
-fluxo. Trocar por conta dedicada antes de produção.
+**Token pessoal do Jira.** Toda ação aparece como do dono da conta, e os
+endpoints param de escrever se o token for revogado. Trocar por conta dedicada
+antes de produção.
 
 **Sales Orders de valor zero** nos relatórios de vendas.
 
-**Formulário sem prova ponta a ponta.** As 17 ligações estão confirmadas na
+**Peso por pacote é aproximação.** Divisão igual do total.
+
+**Formulário sem prova ponta a ponta.** As 18 ligações estão confirmadas na
 configuração, mas nenhum ticket real foi verificado.
 
 **Itens em zero.** A1 Chip e GLOBBLE Regolith WiFi Only. Com tudo ou nada,
@@ -496,47 +544,49 @@ qualquer pedido que os inclua trava inteiro.
 
 **Estoque baixo.** Teltonika 2, GLOBBLE 5G Black 3.
 
-**Campos órfãos.** `Amount of eSIM` e `Amount of Physical SIM`. Limpar após a
-depreciação do `Request New SIM`.
+**Campos órfãos.** `Amount of eSIM` e `Amount of Physical SIM` duplicam
+`Qty A1 eSIM` e `Qty SIM Card`. Limpar após depreciar o `Request New SIM`.
 
-**Limite de peso da UPS desconhecido.** Não sabemos o teto do contrato nem
-quando entra Additional Handling. O backend deveria recusar ou dividir caixa
-acima do limite, mas falta o número.
+**Limite de peso da UPS desconhecido.**
 
 ---
 
-## 15. Pendências
+## 16. Pendências
 
-### Bloqueiam o teste ponta a ponta
-- [ ] Ticket de teste pelo portal com todos os campos, e `form-sync.mjs --verify <chave>`
+### Você
+- [ ] Ticket de teste pelo portal com todos os campos, e
+      `form-sync.mjs --verify <chave>`
+- [ ] Popular o `.env.local` com as 13 variáveis
 - [ ] Validar que "Expedite" existe cotando destino fora da UE
-- [ ] Obter o limite de peso e a faixa de Additional Handling do contrato UPS
+- [ ] Limite de peso e faixa de Additional Handling do contrato UPS
+- [ ] Incluir o `Request hardware and eSIM` na regra `JIP-140` da Bhumika
+- [ ] Trocar o Weight Unit default da org de `lb` para `kg`
 
-### Jira, configuração
-- [ ] Criar `Shipping service` no formulário inicial
-- [ ] Criar Length, Width, Height, Units per box nos tickets de Pick
-- [ ] Validador de workflow tornando os 4 obrigatórios na transição para Done
-- [ ] 4 regras de automation, uma por trigger, com header HMAC
-- [ ] Depreciar `Request New GLOBBLE` e `Request New SIM`, replicando as
-      restrictions do segundo
-
-### Backend
+### Backend, primeiro
 - [ ] Migrations, cliente Zoho com refresh e lock, cliente Jira, HMAC
 - [ ] 5 endpoints
 - [ ] `scripts/seed-item-map.ts` populando `item_map` (§3)
 - [ ] Melhorar `form-sync.mjs --verify`: validar que o issue é do request type
       396 e tem formulário anexado antes de julgar campos vazios
 
+### Automation, depois do backend
+- [ ] 3 regras restantes, a partir do molde `01a06657-...`
+- [ ] Body JSON, header HMAC e "Delay execution" nas quatro
+- [ ] Habilitar e renomear o molde
+
+### Depois de validado
+- [ ] Depreciar `Request New GLOBBLE` e `Request New SIM`, replicando as
+      restrictions do segundo
+
 ### Decisões abertas
 - [ ] O pai fecha automático ou um humano fecha?
-- [ ] `Residential Delivery`: quando marcar? Muda o preço
+- [ ] `Residential Delivery`: quando marcar?
 - [ ] Validação de endereço: só presença, ou formato de CEP por país?
 - [ ] Lista final de países no `customfield_10938`
-- [ ] Trocar o Weight Unit default da org de `lb` para `kg`
 
 ---
 
-## 16. Resolvidas
+## 17. Resolvidas
 
 - [x] Schemes do SSM são dedicados
 - [x] UPS via integração nativa, validada com cotação real em conta francesa
@@ -548,11 +598,15 @@ acima do limite, mas falta o número.
 - [x] Os 9 `item_id` reais
 - [x] Estoque vem como float
 - [x] `actual_available_stock` não desconta committed
-- [x] Itens precisavam de `can_be_sold`, corrigido
+- [x] Itens precisavam de `can_be_sold`
 - [x] Endereço de destino é obrigatório no SO
 - [x] País no Zoho é o nome, não o ISO
 - [x] kg e cm têm que ser consistentes
-- [x] Peso e Parcel Type são obrigatórios
-- [x] N packages caem em um único shipment
-- [x] Deletar ou anular SO libera o committed
+- [x] Peso e Parcel Type obrigatórios
+- [x] Dimensões não são declaradas, só peso e quantidade
+- [x] N packages em um único shipment
+- [x] Remover ou anular SO libera o committed
+- [x] Campo no field config scheme não basta, precisa estar numa tela
+- [x] Dois workflows, com e sem validador de packing
+- [x] Send web request não valida URL na criação
 - [x] 13 env vars configuradas, refresh do token testado

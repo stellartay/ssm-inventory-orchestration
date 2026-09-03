@@ -60,6 +60,12 @@ const yesNo = [
   { id: "2", label: "No", other: false },
 ];
 
+// Precisa casar exatamente com as opcoes do campo Jira customfield_10971.
+// "Expedite" nao esta aqui de proposito: destino fora da Europa e forcado
+// para Expedite pelo backend, nao escolhido pelo requisitante. E ele nao
+// apareceu na cotacao domestica, entao nao esta confirmado nesta conta.
+const SERVICES = ["UPS Standard", "UPS Saver", "UPS Express"];
+
 /** id -> pergunta. A ordem dos ids nao define a ordem visual, o layout define. */
 const Q = {
   // toggles, form-only de proposito: nao viram campo Jira
@@ -108,13 +114,23 @@ const Q = {
     rq: true,
     description: "Required by UPS for international shipments.",
   },
+  21: {
+    type: "cd",
+    label: "Shipping service",
+    jiraField: "customfield_10971",
+    rq: true,
+    description:
+      "Destinations outside Europe are always shipped as Expedite, which " +
+      "overrides this choice.",
+    choices: SERVICES.map((s, i) => ({ id: String(i + 1), label: s, other: false })),
+  },
 };
 
 const SECTIONS = {
   1: { name: "GLOBBLE devices", questions: [4, 5, 6, 7, 8] },
   2: { name: "Connectivity", questions: [9, 10, 11] },
   3: { name: "Accessories", questions: [12] },
-  4: { name: "Delivery address", questions: [13, 14, 15, 16, 17, 18, 19, 20] },
+  4: { name: "Delivery address", questions: [13, 14, 15, 16, 17, 18, 19, 20, 21] },
 };
 
 /**
@@ -242,8 +258,8 @@ function sanityCheck(design) {
   if (new Set(linked).size !== linked.length) {
     problems.push("dois campos Jira ligados a mais de uma pergunta");
   }
-  if (linked.length !== 17) {
-    problems.push(`esperava 17 campos ligados, encontrei ${linked.length}`);
+  if (linked.length !== 18) {
+    problems.push(`esperava 18 campos ligados, encontrei ${linked.length}`);
   }
 
   // Condicoes: o gatilho tem que existir, ser choice, e estar FORA de secao,
