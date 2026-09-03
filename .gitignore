@@ -1,6 +1,5 @@
-form-current.json
-form-planned.json
-jira-fields.json
+.env
+.env.local
 form-current.json
 form-planned.json
 jira-fields.json
