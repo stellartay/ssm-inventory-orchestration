@@ -1,6 +1,6 @@
 # SSM Inventory Orchestration — Contexto e Especificação
 
-Versão 7. Substitui v1 a v6.
+Versão 8. Substitui v1 a v7.
 Fonte de verdade das decisões. Não reabrir decisão travada sem confirmação
 explícita do dono do projeto.
 
@@ -136,8 +136,17 @@ no SO o shipment não pode ser criado ("Address cannot be empty").
 | Country `10938` | `country` | CountryCode |
 | Phone `10937` | `phone` | Phone |
 
-> **O Zoho espera o nome do país, não o ISO.** O dropdown oferece "France".
-> O campo Jira guarda `"FR - France"`. Enviar a parte **depois** do separador.
+> **O Zoho espera o nome do país, não o ISO.** E o nome não é o oficial:
+> o dropdown oferece **"France"** e **"U.S.A"**, não "United States".
+> O campo Jira guarda `"FR - France"`.
+>
+> **O backend precisa de uma tabela de tradução** do valor do campo Jira para o
+> que o Zoho aceita, item por item. Não dá para derivar por regra, porque
+> "U.S.A" não segue nenhum padrão previsível. Cada país adicionado ao
+> `customfield_10938` precisa ter o nome conferido no dropdown do Zoho antes de
+> entrar em produção.
+>
+> Conhecidos até agora: `FR - France` → `France`, `US - United States` → `U.S.A`.
 
 ---
 
@@ -174,16 +183,58 @@ descartado.
 Escolhido pelo cliente interno no formulário (`customfield_10971`), com
 Standard, Saver e Express.
 
-**Destino fora da Europa usa sempre Expedite**, sobrepondo a escolha. Da lista
+**Destino fora da Europa usa sempre Expedited**, sobrepondo a escolha. Da lista
 atual de países, só os EUA se qualificam.
 
-> Pendente: "Expedite" **não apareceu** na cotação doméstica. Confirmar cotando
-> destino fora da UE antes de codificar essa regra.
+### 6.5 Internacional é um fluxo diferente, validado com destino nos EUA
 
-### 6.5 N packages em um único shipment
+Testado com Bruges → Frisco, TX. Cotação real:
+
+| Serviço | Preço |
+|---|---|
+| **UPS Expedited®** | **€32,00** |
+| UPS Saver® | €33,55 |
+| UPS Express® | €49,06 |
+| UPS Express Plus® | €269,45 |
+
+> **`UPS Standard` não aparece na cotação internacional.** A regra de sobrepor
+> para Expedited não é preferência de custo, é necessidade: se o requisitante
+> escolher Standard para os EUA e o backend não sobrepuser, a UPS rejeita o
+> shipment. O Expedited também é o mais barato dos quatro.
+
+Nome exato do serviço no payload: **`UPS Expedited®`**, com o símbolo de marca
+registrada. Não "Expedite".
+
+Aparece o aviso *"International Processing Fee has been added to the Shipment."*
+
+**Diferenças em relação ao doméstico:**
+
+| | Doméstico | Internacional |
+|---|---|---|
+| `Shipment Description` | opcional | **obrigatório** |
+| Parcel Type | 8 opções | ganha `UPS 25 KG Box®` |
+| Passo de declaração de itens | não existe | **existe**, com Unit Price |
+| Campos aduaneiros | não existem | Commodity Code, Reason For Export, CN22Type, CN22 Content*, NAFTA Blanket period, Origin Country Code, NetCostCode, Preference Criteria, Producer Info, Package Declared Value |
+
+Os campos aduaneiros **não são obrigatórios para cotar**, mas a alfândega pode
+exigi-los na prática. Commodity Code é o HS code da mercadoria e não existe no
+`item_map`.
+
+> ### Unit Price zero na declaração aduaneira
+> O passo "Add Line Item Description" mostra `Unit Price: 0`, consequência
+> direta do `rate = 0` nos itens. Mercadoria declarada com valor zero
+> costuma ser retida pela alfândega americana. **Isso não é problema de
+> software, é de processo**, e precisa de conversa com quem cuida de comércio
+> exterior antes do primeiro envio internacional real.
+
+> ### O `Shipment Description` não tem campo de origem
+> É obrigatório em internacional e não existe no formulário do Jira. O backend
+> precisa gerar, provavelmente a partir dos nomes dos itens do pedido.
+
+### 6.6 N packages em um único shipment
 Um shipment aceita vários pacotes: **um envio, um tracking number**.
 
-### 6.6 Não decidido
+### 6.7 Não decidido
 `Residential Delivery` (provavelmente necessário para colaborador em casa, e
 muda o preço), `Direct Delivery Only`, `Saturday Delivery`.
 
@@ -564,6 +615,14 @@ antes de produção.
 
 **Peso por pacote é aproximação.** Divisão igual do total.
 
+**Valor declarado zero em envio internacional.** Com `rate = 0` nos itens, a
+declaração aduaneira sai com Unit Price 0. Risco de retenção na alfândega
+americana. Precisa de decisão de processo antes do primeiro envio real fora da UE.
+
+**Campos aduaneiros não preenchidos.** Commodity Code (HS code), Reason For
+Export e CN22 não são exigidos para cotar, mas podem ser na prática. Nenhum
+existe no `item_map` nem no formulário.
+
 **Itens em zero.** A1 Chip e GLOBBLE Regolith WiFi Only. Com tudo ou nada,
 qualquer pedido que os inclua trava inteiro.
 
@@ -581,10 +640,11 @@ qualquer pedido que os inclua trava inteiro.
 ### Você
 - [ ] Popular o `.env.local` com as 13 variáveis, e guardá-las no gerenciador
       de senhas (o token do Jira já se perdeu uma vez)
-- [ ] Validar que "Expedite" existe cotando destino fora da UE
 - [ ] Limite de peso e faixa de Additional Handling do contrato UPS
-- [ ] Incluir o `Request hardware and eSIM` na regra `JIP-140` da Bhumika
 - [ ] Trocar o Weight Unit default da org de `lb` para `kg`
+- [ ] Decidir o valor declarado para alfândega em envio internacional (§6.5)
+- [ ] Conferir o nome de cada país no dropdown do Zoho antes de adicionar ao
+      `customfield_10938`
 
 ### Backend, primeiro
 - [ ] Migrations, cliente Zoho com refresh e lock, cliente Jira, HMAC
@@ -637,3 +697,10 @@ qualquer pedido que os inclua trava inteiro.
 - [x] **Formulário provado ponta a ponta** com o SSM-154: os valores chegam ao
       issue pelo mesmo caminho que o backend usa
 - [x] Selects chegam como objeto, ler `.value`
+- [x] `UPS Expedited®` existe e é obrigatório fora da UE, validado com cotação
+      real para Frisco TX. `UPS Standard` nem aparece em internacional
+- [x] Internacional exige `Shipment Description` e abre um passo de declaração
+      aduaneira que não existe no doméstico
+- [x] Nome do país no Zoho não segue padrão: "France" mas "U.S.A"
+- [x] Regra `JIP-140` da Bhumika atualizada para `is one of` com os dois
+      request types, mantendo o antigo
