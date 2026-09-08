@@ -1,6 +1,6 @@
 # SSM Inventory Orchestration — Contexto e Especificação
 
-Versão 6. Substitui v1 a v5.
+Versão 7. Substitui v1 a v6.
 Fonte de verdade das decisões. Não reabrir decisão travada sem confirmação
 explícita do dono do projeto.
 
@@ -291,6 +291,34 @@ Não usados, mantidos apenas para não sujar "Deleted fields":
 > Se o campo não estiver ali, ninguém consegue preencher, e um validador que o
 > exige trava a pessoa sem saída.
 
+### Formato dos valores na leitura do issue
+
+Validado em ponta a ponta com o SSM-154, ticket real criado pelo portal.
+O `GET /rest/api/3/issue/{key}?fields=...` devolve:
+
+| Tipo | Formato | Como ler |
+|---|---|---|
+| Number (`Qty *`, `Number of packages`) | número puro, sem quotes: `1`, `2` | direto |
+| Short text (endereço) | string: `"Test"` | direto |
+| **Select list** (`Country`, `Shipping service`) | **objeto** | `.value` |
+
+O select vem assim:
+
+```json
+{
+  "self": "https://.../rest/api/3/customFieldOption/10541",
+  "value": "FR - France",
+  "id": "10541"
+}
+```
+
+> **O backend tem que ler `.value` nos dois selects** (`customfield_10938` e
+> `customfield_10971`). Tratar como string produz `[object Object]` no payload
+> do Zoho, e o Sales Order nasce com país inválido.
+
+Campo não preenchido vem `null`, então checar `!= null` e não falsy: quantidade
+`0` é valor legítimo em teoria, ainda que o formulário exija mínimo 1.
+
 ---
 
 ## 9. Formulário
@@ -536,9 +564,6 @@ antes de produção.
 
 **Peso por pacote é aproximação.** Divisão igual do total.
 
-**Formulário sem prova ponta a ponta.** As 18 ligações estão confirmadas na
-configuração, mas nenhum ticket real foi verificado.
-
 **Itens em zero.** A1 Chip e GLOBBLE Regolith WiFi Only. Com tudo ou nada,
 qualquer pedido que os inclua trava inteiro.
 
@@ -554,9 +579,8 @@ qualquer pedido que os inclua trava inteiro.
 ## 16. Pendências
 
 ### Você
-- [ ] Ticket de teste pelo portal com todos os campos, e
-      `form-sync.mjs --verify <chave>`
-- [ ] Popular o `.env.local` com as 13 variáveis
+- [ ] Popular o `.env.local` com as 13 variáveis, e guardá-las no gerenciador
+      de senhas (o token do Jira já se perdeu uma vez)
 - [ ] Validar que "Expedite" existe cotando destino fora da UE
 - [ ] Limite de peso e faixa de Additional Handling do contrato UPS
 - [ ] Incluir o `Request hardware and eSIM` na regra `JIP-140` da Bhumika
@@ -610,3 +634,6 @@ qualquer pedido que os inclua trava inteiro.
 - [x] Dois workflows, com e sem validador de packing
 - [x] Send web request não valida URL na criação
 - [x] 13 env vars configuradas, refresh do token testado
+- [x] **Formulário provado ponta a ponta** com o SSM-154: os valores chegam ao
+      issue pelo mesmo caminho que o backend usa
+- [x] Selects chegam como objeto, ler `.value`
